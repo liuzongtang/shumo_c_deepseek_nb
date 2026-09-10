@@ -1,0 +1,7 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 临时核对/调试产物
+_fmtchk*.txt
