@@ -51,8 +51,7 @@ solve_q4.PV = PV
 pvf = build_pv_forecast_stage()
 pv0 = pvf[0]                                        # 0:00 光伏预报 (365,144)
 rob2 = solve_q4.run_robust(pv0)                     # 连续储能鲁棒
-plan_fc2 = solve_q4._global_lp(price_mat1[31:], LOAD[31:], pv0[31:])
-res3 = solve_q4.run_rolling(pvf, plan_fc2['E'])     # 连续储能滚动
+res3 = solve_q4.run_rolling(pvf)                    # 连续储能滚动
 
 # 问题4 全局(用于跨日SOC，附件4 波动电价)
 solve_q4.PRICE_MAT = PRICE4

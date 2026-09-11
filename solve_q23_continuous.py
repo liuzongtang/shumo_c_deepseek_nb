@@ -41,8 +41,7 @@ def main():
     rob = solve_q4.run_robust(pvf[0])
 
     # 滚动：0/6/12/18 预报滚动调整（连续储能）
-    plan_fc = solve_q4._global_lp(price_mat[31:], load[31:], pvf[0][31:])
-    roll = solve_q4.run_rolling(pvf, plan_fc['E'])
+    roll = solve_q4.run_rolling(pvf)
 
     p = price_mat[31:]
 

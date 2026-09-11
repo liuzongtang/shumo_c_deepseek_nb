@@ -122,31 +122,54 @@ def _global_recourse(G_plan, price_mat, load_mat, pv_mat):
     return {'C': C, 'D': D, 'E': E, 'e': e}
 
 
+def _slice_to_reported(res):
+    """把 365 天结果裁到 2.1–12.31（334 天），并重算 334 天计划购电费。
+    数组字段 shape 为 (365,144) 或 (365*144+1,)。"""
+    out = {}
+    for k, v in res.items():
+        if k == 'cost':
+            continue
+        if isinstance(v, np.ndarray):
+            if v.ndim == 2 and v.shape[0] == 365:
+                out[k] = v[31:]
+            elif v.ndim == 1 and v.shape[0] == 365 * N_SLOT + 1:
+                out[k] = v[31 * N_SLOT:]
+            else:
+                out[k] = v
+        else:
+            out[k] = v
+    if 'G' in out:
+        out['cost'] = float(np.sum(out['G'] * PRICE_MAT[31:]))
+    return out
+
+
 def run_deterministic():
-    """完美预见：全年连续优化(实际光伏)。"""
-    return _global_lp(PRICE_MAT[31:], LOAD[31:], PV[31:])
+    """完美预见：全年连续优化(实际光伏)，返回 2.1–12.31 结果。"""
+    return _slice_to_reported(_global_lp(PRICE_MAT, LOAD, PV))
 
 
 def run_robust(pv0):
-    """问题2鲁棒：全年0:00光伏预报做计划 + 实际光伏重调度。"""
-    plan = _global_lp(PRICE_MAT[31:], LOAD[31:], pv0[31:])
-    rc = _global_recourse(plan['G'], PRICE_MAT[31:], LOAD[31:], PV[31:])
+    """问题2鲁棒：全年0:00光伏预报做计划 + 实际光伏重调度，返回 2.1–12.31 结果。"""
+    plan = _global_lp(PRICE_MAT, LOAD, pv0)
+    rc = _global_recourse(plan['G'], PRICE_MAT, LOAD, PV)
     plan.update({'e': rc['e'], 'C': rc['C'], 'D': rc['D'], 'E': rc['E']})
-    return plan
+    return _slice_to_reported(plan)
 
 
-def run_rolling(pvf, E_plan):
-    """问题3滚动：0/6/12/18 预报滚动调整 + 全年连续重调度。
-    E_plan: 全局预报计划的 SOC 轨迹(ndays*144+1)，提供跨日边界电量。"""
-    ndays = 334
+def run_rolling(pvf, E_plan=None):
+    """问题3滚动：0/6/12/18 预报滚动调整 + 全年连续重调度，返回 2.1–12.31 结果。
+    E_plan: 全局预报计划 SOC 轨迹(365*144+1)；缺省时内部计算。"""
+    if E_plan is None:
+        E_plan = _global_lp(PRICE_MAT, LOAD, pvf[0])['E']
+    ndays = 365
     G_plan = np.zeros((ndays, N_SLOT))
     G_adj = np.zeros((ndays, N_SLOT))
     for d in range(ndays):
-        dd = 31 + d
+        dd = d                            # 全年（含 1 月过渡）
         p = PRICE_MAT[dd]
         ld = LOAD[dd]
-        E0b = E_plan[d * N_SLOT]             # 当天0:00边界电量
-        E1b = E_plan[(d + 1) * N_SLOT]       # 当天24:00边界电量
+        E0b = E_plan[d * N_SLOT]          # 当天0:00边界电量
+        E1b = E_plan[(d + 1) * N_SLOT]    # 当天24:00边界电量
         r0 = stage_lp(p, ld, pvf[0][dd], 0, E0b, E1b, None)
         G_plan[d] = r0['G']
         r1 = stage_lp(p, ld, pvf[6][dd], 36, r0['E'][36], E1b, G_plan[d][36:])
@@ -156,11 +179,12 @@ def run_rolling(pvf, E_plan):
         r3 = stage_lp(p, ld, pvf[18][dd], 108, r2['E'][108 - 72], E1b, G_plan[d][108:])
         G18 = r3['G']
         G_adj[d] = np.concatenate([G_plan[d][0:36], G6[0:36], G12[0:36], G18[0:36]])
-    rc = _global_recourse(G_adj, PRICE_MAT[31:], LOAD[31:], PV[31:])
+    rc = _global_recourse(G_adj, PRICE_MAT, LOAD, PV)
     up = np.maximum(0.0, G_adj - G_plan)
     dn = np.maximum(0.0, G_plan - G_adj)
-    return {'G_plan': G_plan, 'G_adj': G_adj, 'up': up, 'dn': dn,
-            'C': rc['C'], 'D': rc['D'], 'E': rc['E'], 'e': rc['e']}
+    res = {'G_plan': G_plan, 'G_adj': G_adj, 'up': up, 'dn': dn,
+           'C': rc['C'], 'D': rc['D'], 'E': rc['E'], 'e': rc['e']}
+    return _slice_to_reported(res)
 
 
 def _slot_clock(t):
@@ -324,9 +348,7 @@ def main():
 
     det = run_deterministic()
     rob = run_robust(pvf[0])
-    # 滚动所需的全局预报计划 SOC 轨迹
-    plan_fc = _global_lp(PRICE_MAT[31:], LOAD[31:], pvf[0][31:])
-    roll = run_rolling(pvf, plan_fc['E'])
+    roll = run_rolling(pvf)
 
     out = []
     out.append("===== 问题4 波动电价(全年连续储能) =====")
@@ -353,8 +375,8 @@ def main():
                   (roll['up'].sum(axis=1) > 1e-9).sum()))
     out.append("")
     # 对比：附件1每日同价(连续储能，见 solve_q23_continuous.py) vs 附件4波动价
-    out.append("对比(问题2鲁棒): 附件1同价总费 14725566.34 元 vs 附件4波动价总费 %.2f 元" % t2)
-    out.append("对比(问题3滚动): 附件1同价总费 14562033.99 元 vs 附件4波动价总费 %.2f 元" % t3)
+    out.append("对比(问题2鲁棒): 附件1同价总费 14725260.23 元 vs 附件4波动价总费 %.2f 元" % t2)
+    out.append("对比(问题3滚动): 附件1同价总费 14561727.61 元 vs 附件4波动价总费 %.2f 元" % t3)
     out.append("")
     # 跨日储能电量利用率
     Esoc = rob['E']
