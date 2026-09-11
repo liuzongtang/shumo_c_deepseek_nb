@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """生成论文用图（中文标签、高清 PNG + PDF）。
-图1 问题1单日调度全景；图2 问题2全年购电费构成；图3 问题3滚动调整(3.20)；
+图1 问题1单日调度全景；图2 问题2购电费构成(2–12月)；图3 问题3滚动调整(3.20)；
 图4 问题4 SOC跨日轨迹；图5 问题4电价波动特征；图6 光伏预报误差。
 """
 import matplotlib
@@ -117,7 +117,7 @@ ax.bar(x, em_m, bottom=plan_m, label="紧急购电费(5倍)", color="#e74c3c")
 ax.set_xticks(x)
 ax.set_xticklabels(m_labels)
 ax.set_ylabel("购电费 (万元)")
-ax.set_title("问题2 全年购电费构成（鲁棒方案，逐月）")
+ax.set_title("问题2 购电费构成（鲁棒方案，2025年2–12月逐月）")
 ax.legend()
 ax.grid(alpha=0.3, axis="y")
 save(fig, "fig2_问题2_全年购电费构成")
