@@ -24,13 +24,15 @@ def solve_day(price, load, pv, E0=E_INIT, E1=E_INIT):
 
     Aeq = []
     beq = []
-    # (1) 功率平衡: G + D - C = L_e - PV_e
+    Aub = []
+    bub = []
+    # (1) 功率平衡: G + PV·Δt + D >= L·Δt + C  =>  -G - D + C <= (PV-L)·Δt
     for t in range(N_SLOT):
         row = np.zeros(n)
-        row[offG + t] = 1.0
-        row[offD + t] = 1.0
-        row[offC + t] = -1.0
-        Aeq.append(row); beq.append(Le[t] - PVe[t])
+        row[offG + t] = -1.0
+        row[offD + t] = -1.0
+        row[offC + t] = 1.0
+        Aub.append(row); bub.append(PVe[t] - Le[t])
     # (2) 储能动态: E[t+1] - E[t] - η*C[t] + D[t]/η = 0
     for t in range(N_SLOT):
         row = np.zeros(n)
@@ -44,6 +46,7 @@ def solve_day(price, load, pv, E0=E_INIT, E1=E_INIT):
     row = np.zeros(n); row[offE + N_SLOT] = 1.0; Aeq.append(row); beq.append(E1)
 
     Aeq = np.array(Aeq); beq = np.array(beq)
+    Aub = np.array(Aub); bub = np.array(bub)
 
     # 边界
     lb = np.zeros(n); ub = np.full(n, np.inf)
@@ -55,8 +58,8 @@ def solve_day(price, load, pv, E0=E_INIT, E1=E_INIT):
         ub[offE + t] = E_MAX
     # G 无上界 (lb=0, ub=inf)
 
-    res = linprog(c, A_eq=Aeq, b_eq=beq, bounds=list(zip(lb, ub)),
-                  method="highs")
+    res = linprog(c, A_eq=Aeq, b_eq=beq, A_ub=Aub, b_ub=bub,
+                  bounds=list(zip(lb, ub)), method="highs")
     if not res.success:
         raise RuntimeError(res.message)
 
