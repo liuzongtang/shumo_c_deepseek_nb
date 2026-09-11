@@ -16,7 +16,7 @@
 import numpy as np
 from data_loader import load_fj1, load_fj2, N_SLOT
 import solve_q4
-from solve_q3 import build_pv_forecast_stage
+from common import build_pv_forecast_stage, MERGE_EPS
 
 
 def main():
@@ -67,7 +67,7 @@ def main():
     out.append("  计划费: %.2f 元" % p2)
     out.append("  紧急费(5倍): %.2f 元" % e2)
     out.append("  总费: %.2f 元   (旧·每日复位: 14647581.90 元)" % t2)
-    out.append("  紧急购电量: %.2f kWh, %d/334 天" % (rob['e'].sum(), (rob['e'].sum(1) > 1e-9).sum()))
+    out.append("  紧急购电量: %.2f kWh, %d/334 天" % (rob['e'].sum(), (rob['e'].sum(1) > MERGE_EPS).sum()))
     out.append("")
     p3, a3, e3, t3 = rl_cost(roll)
     out.append("---- 问题3 滚动（0/6/12/18 预报）----")
@@ -75,8 +75,8 @@ def main():
     out.append("  调整费: %.2f 元" % a3)
     out.append("  紧急费(5倍): %.2f 元" % e3)
     out.append("  总费: %.2f 元   (旧·每日复位: 14493184.73 元)" % t3)
-    out.append("  紧急购电量: %.2f kWh, %d/334 天" % (roll['e'].sum(), (roll['e'].sum(1) > 1e-9).sum()))
-    out.append("  上调天数: %d, 下调天数: %d" % ((roll['up'].sum(1) > 1e-9).sum(), (roll['dn'].sum(1) > 1e-9).sum()))
+    out.append("  紧急购电量: %.2f kWh, %d/334 天" % (roll['e'].sum(), (roll['e'].sum(1) > MERGE_EPS).sum()))
+    out.append("  上调天数: %d, 下调天数: %d" % ((roll['up'].sum(1) > MERGE_EPS).sum(), (roll['dn'].sum(1) > MERGE_EPS).sum()))
     out.append("")
     # 储电量逐日分布
     E0 = rob['E'][0::N_SLOT]

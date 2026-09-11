@@ -15,7 +15,7 @@ from scipy.optimize import linprog
 from scipy.sparse import coo_matrix
 from data_loader import (load_fj2, load_fj3, load_fj4, DT, PMAX_E, E_MAX, E_MIN,
                          E_INIT, ETA, N_SLOT)
-from solve_q3 import stage_lp, build_pv_forecast_stage
+from common import stage_lp, build_pv_forecast_stage, MERGE_EPS
 
 PRICE_MAT = None      # 附件4 (365,144)
 DATES = None
@@ -196,11 +196,11 @@ def _merge_ranges(e):
     out = []
     i = 0
     while i < N_SLOT:
-        if e[i] <= 1e-9:
+        if e[i] <= MERGE_EPS:
             i += 1
             continue
         j = i
-        while j + 1 < N_SLOT and e[j + 1] > 1e-9:
+        while j + 1 < N_SLOT and e[j + 1] > MERGE_EPS:
             j += 1
         out.append((i, j, float(e[i:j + 1].sum())))
         i = j + 1
@@ -364,15 +364,15 @@ def main():
     out.append("[问题2·鲁棒] 计划费 %.2f + 紧急费 %.2f = %.2f 元"
                % (p2, e2, t2))
     out.append("  紧急购电量 %.2f kWh, 紧急天数 %d/334"
-               % (rob['e'].sum(), (rob['e'].sum(axis=1) > 1e-9).sum()))
+               % (rob['e'].sum(), (rob['e'].sum(axis=1) > MERGE_EPS).sum()))
     out.append("")
     # 滚动问题3
     p3, e3, a3, t3 = _cost_breakdown(roll, PRICE_MAT, robust=False)
     out.append("[问题3·滚动] 计划费 %.2f + 调整费 %.2f + 紧急费 %.2f = %.2f 元"
                % (p3, a3, e3, t3))
     out.append("  紧急购电量 %.2f kWh, 紧急天数 %d/334, 上调天数 %d"
-               % (roll['e'].sum(), (roll['e'].sum(axis=1) > 1e-9).sum(),
-                  (roll['up'].sum(axis=1) > 1e-9).sum()))
+               % (roll['e'].sum(), (roll['e'].sum(axis=1) > MERGE_EPS).sum(),
+                  (roll['up'].sum(axis=1) > MERGE_EPS).sum()))
     out.append("")
     # 对比：附件1每日同价(连续储能，见 solve_q23_continuous.py) vs 附件4波动价
     out.append("对比(问题2鲁棒): 附件1同价总费 14725260.23 元 vs 附件4波动价总费 %.2f 元" % t2)

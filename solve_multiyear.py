@@ -23,7 +23,7 @@ from scipy.optimize import linprog
 from scipy.sparse import coo_matrix
 from data_loader import (load_fj1, load_fj2, load_fj4, DT, PMAX_E, E_MAX, E_MIN,
                          E_INIT, ETA, N_SLOT)
-from solve_q3 import build_pv_forecast_stage
+from common import build_pv_forecast_stage
 
 N_YEARS = 5                 # 平铺年数
 MODES = ['annual6000', 'outer6000', 'cyclic', 'free']

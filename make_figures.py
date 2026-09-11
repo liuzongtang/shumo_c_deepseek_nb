@@ -15,7 +15,7 @@ plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Noto Sans CJK S
 plt.rcParams["axes.unicode_minus"] = False
 
 from data_loader import load_fj1, load_fj2, load_fj4, DT, N_SLOT, E_INIT
-import solve_q1, solve_q2, solve_q3, solve_q4
+import solve_q1, solve_q4
 
 FIG = Path(__file__).parent / "figures"
 FIG.mkdir(exist_ok=True)
@@ -42,7 +42,7 @@ DATES, LOAD, PV = load_fj2()
 _, PRICE4 = load_fj4()
 
 # 问题2/3 全局（全年连续储能，附件1 每日同价）—— 修正版，与 solve_q23_continuous.py 一致
-from solve_q3 import build_pv_forecast_stage
+from common import build_pv_forecast_stage
 price_mat1 = np.tile(price1, (365, 1))
 solve_q4.PRICE_MAT = price_mat1
 solve_q4.DATES = DATES

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""问题2 模型（solve_q2.solve_day）的边界/鲁棒性测试，用于论文的模型验证与敏感性分析。
+"""问题2 模型（common.solve_day）的边界/鲁棒性测试，用于论文的模型验证与敏感性分析。
 
 三个测试（均用附件1 的单日电价/负载/光伏，储能首末回到初值）：
   测试A：光伏全天为 0 —— 验证仅靠外网购电即可满足负载并维持储能首末平衡。
@@ -20,7 +20,7 @@ plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Noto Sans CJK S
 plt.rcParams["axes.unicode_minus"] = False
 
 from data_loader import load_fj1, DT, N_SLOT, E_INIT, E_MAX, E_MIN
-import solve_q2
+from common import solve_day
 
 FIG = Path(__file__).parent / "figures"
 FIG.mkdir(exist_ok=True)
@@ -105,7 +105,7 @@ def main():
 
     # ---- 测试A：光伏全天为 0 ----
     pv0 = np.zeros_like(pv)
-    rA = solve_q2.solve_day(price, load, pv0)
+    rA = solve_day(price, load, pv0)
     out.append(verify("测试A：光伏全天为 0（仅靠购电满足负载）", rA, load, pv0,
                       E_INIT, E_INIT, E_MIN, E_MAX, expect_g="positive"))
     plot_test("fig_testA_光伏为零", "测试A：光伏全天为 0（仅靠购电满足负载）",
@@ -113,7 +113,7 @@ def main():
 
     # ---- 测试B：负载全天为 0 ----
     load0 = np.zeros_like(load)
-    rB = solve_q2.solve_day(price, load0, pv)
+    rB = solve_day(price, load0, pv)
     out.append(verify("测试B：负载全天为 0（是否疯狂购电充电）", rB, load0, pv,
                       E_INIT, E_INIT, E_MIN, E_MAX, expect_g="zero",
                       expect_note="购电=0；储能少量充放电为退化解（零成本回收光伏，调度非唯一），关键结论是模型不会购电给储能充电。"))
@@ -122,7 +122,7 @@ def main():
 
     # ---- 测试C：储能容量极小 1200 kWh ----
     E_max_s, E_min_s, E_init_s = 1200.0, 0.0, 600.0
-    rC = solve_q2.solve_day(price, load, pv, E0=E_init_s, E1=E_init_s,
+    rC = solve_day(price, load, pv, E0=E_init_s, E1=E_init_s,
                             E_min=E_min_s, E_max=E_max_s)
     out.append(verify("测试C：储能容量极小(1200 kWh，SOC∈[0,1200])", rC, load, pv,
                       E_init_s, E_init_s, E_min_s, E_max_s, expect_g="positive"))
