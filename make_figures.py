@@ -41,25 +41,24 @@ r1 = solve_q1.solve_day(price1, load1, pv1)
 DATES, LOAD, PV = load_fj2()
 _, PRICE4 = load_fj4()
 
-# 问题2/3 全局
-solve_q2.PRICE = price1
-solve_q2.DATES = DATES
-solve_q2.LOAD = LOAD
-solve_q2.PV = PV
-solve_q3.PRICE = price1
-solve_q3.DATES = DATES
-solve_q3.LOAD = LOAD
-solve_q3.PV = PV
+# 问题2/3 全局（全年连续储能，附件1 每日同价）—— 修正版，与 solve_q23_continuous.py 一致
+from solve_q3 import build_pv_forecast_stage
+price_mat1 = np.tile(price1, (365, 1))
+solve_q4.PRICE_MAT = price_mat1
+solve_q4.DATES = DATES
+solve_q4.LOAD = LOAD
+solve_q4.PV = PV
+pvf = build_pv_forecast_stage()
+pv0 = pvf[0]                                        # 0:00 光伏预报 (365,144)
+rob2 = solve_q4.run_robust(pv0)                     # 连续储能鲁棒
+plan_fc2 = solve_q4._global_lp(price_mat1[31:], LOAD[31:], pv0[31:])
+res3 = solve_q4.run_rolling(pvf, plan_fc2['E'])     # 连续储能滚动
 
-rob2 = solve_q2.run_robust()
-res3 = solve_q3.run()
-
-# 问题4 全局(用于跨日SOC)
+# 问题4 全局(用于跨日SOC，附件4 波动电价)
 solve_q4.PRICE_MAT = PRICE4
 solve_q4.DATES = DATES
 solve_q4.LOAD = LOAD
 solve_q4.PV = PV
-pv0 = solve_q2.build_pv_forecast()
 rob4 = solve_q4.run_robust(pv0)          # 鲁棒：0:00预报计划 + 实际光伏全局重调度
 
 # ============ 图1 问题1 单日调度全景 ============

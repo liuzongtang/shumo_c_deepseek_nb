@@ -23,9 +23,10 @@ LOAD = None           # 附件2 实际负载 (365,144)
 PV = None             # 附件2 实际光伏 (365,144)
 
 
-def solve_day(price, load, pv, E0=E_INIT, E1=E_INIT):
+def solve_day(price, load, pv, E0=E_INIT, E1=E_INIT, E_min=E_MIN, E_max=E_MAX):
     """解一天 144 段的储能+购电 LP（平衡用不等式，允许弃光）。
-    price:(144,) 元/kWh；load/pv:(144,) kW。返回 dict: G,C,D,E(145),cost。"""
+    price:(144,) 元/kWh；load/pv:(144,) kW。返回 dict: G,C,D,E(145),cost。
+    E_min/E_max 为储能 SOC 上下限(用于敏感性测试，默认用全局 E_MIN/E_MAX)。"""
     Le = load * DT
     PVe = pv * DT
     nG = nC = nD = N_SLOT
@@ -62,8 +63,8 @@ def solve_day(price, load, pv, E0=E_INIT, E1=E_INIT):
         ub[offC + t] = PMAX_E
         ub[offD + t] = PMAX_E
     for t in range(nE):
-        lb[offE + t] = E_MIN
-        ub[offE + t] = E_MAX
+        lb[offE + t] = E_min
+        ub[offE + t] = E_max
 
     res = linprog(c, A_eq=np.array(Aeq), b_eq=np.array(beq),
                   A_ub=np.array(Aub), b_ub=np.array(bub),
