@@ -5,3 +5,6 @@ __pycache__/
 
 # 临时核对/调试产物
 _fmtchk*.txt
+
+# Word/WPS 锁文件
+~$*
