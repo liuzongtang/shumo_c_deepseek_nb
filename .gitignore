@@ -8,3 +8,10 @@ _fmtchk*.txt
 
 # Word/WPS 锁文件
 ~$*
+
+# 优化过程的备份与归档（不上传）
+_pre_*_backup/
+_unused_figures/
+
+# Reasonix 会话产物（与项目无关）
+.reasonix/

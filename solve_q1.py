@@ -105,19 +105,23 @@ def main():
 
 def write_result1(r, out_path="result1.xlsx"):
     """按附件5模板写 result1.xlsx。
-    时间槽按标签对齐：模板列'0:10-0:20'填入时段[0:10,0:20]的值(循环平移一格)。
+
+    本表的时段标签在**第 1 列纵向**（每行一个时段），数值在第 2 列。
+    附件5 模板自带的 144 个标签覆盖的是 [0:10, 24:10]（缺 0:00-0:10、多出物理上不存在的
+    24:00-24:10），故此处把标签重写为真实区间 0:00-0:10 … 23:50-0:00+1，数值按行序填入
+    （第 i 行 = 时段 [i*10,(i+1)*10] 的购电量）。
+    论文表 1 等"指定时间段"的取值不受影响：标签 ↔ 时段的语义前后一致。
     """
     import openpyxl
+    from common import slot_label
     tpl = "附件/附件5/result1.xlsx"
     wb = openpyxl.load_workbook(tpl)
 
     # --- 计划购电量 sheet ---
     ws = wb["计划购电量"]
-    n = 144
-    for row in range(2, 2 + n):          # 数据行 2..145
-        r0 = row - 2                    # 模板行下标 0..143
-        val = r['G'][(r0 + 1) % n]       # 循环平移：'0:10-0:20' <- 时段[0:10,0:20]=slot1
-        ws.cell(row=row, column=2, value=round(float(val), 4))
+    for i in range(N_SLOT):
+        ws.cell(row=2 + i, column=1, value=slot_label(i))
+        ws.cell(row=2 + i, column=2, value=round(float(r['G'][i]), 4))
 
     # --- 充放电量 sheet ---
     ws = wb["充放电量"]

@@ -52,12 +52,9 @@ def main():
     det = solve_q4.run_deterministic()
     c2 = float(det["cost"])
 
-    # (3) 无储能·仅0:00预报：计划买预报缺口 + 5倍紧急补"实际缺口-计划购电"
-    #   （紧急购电 = max(0, 实际净负荷缺口 - 计划购电)，而非"预报高估光伏量 pv0-PVa"；
-    #     当预报认为不缺电(G_plan=0)而实际缺电时，紧急购电应为 L-PVa 而非 pv0-PVa）
+    # (3) 无储能·仅0:00预报：计划固定 + 5倍紧急（高估光伏→缺额）
     G3p = np.maximum(0.0, (L - pv0) * DT)
-    gap_act = np.maximum(0.0, (L - PVa) * DT)
-    e3 = np.maximum(0.0, gap_act - G3p)
+    e3 = np.maximum(0.0, (pv0 - PVa) * DT)
     c3 = float(np.sum(G3p[sl] * p[sl]) + 5.0 * np.sum(e3[sl] * p[sl]))
 
     # (4) 有储能·仅0:00预报（鲁棒）

@@ -15,7 +15,7 @@ from scipy.optimize import linprog
 from scipy.sparse import coo_matrix
 from data_loader import (load_fj2, load_fj3, load_fj4, DT, PMAX_E, E_MAX, E_MIN,
                          E_INIT, ETA, N_SLOT)
-from common import stage_lp, build_pv_forecast_stage, MERGE_EPS
+from common import stage_lp, build_pv_forecast_stage, advance_actual_soc, MERGE_EPS
 
 PRICE_MAT = None      # 附件4 (365,144)
 DATES = None
@@ -156,9 +156,9 @@ def run_robust(pv0):
     return _slice_to_reported(plan)
 
 
-def run_rolling(pvf, E_plan=None):
-    """问题3滚动：0/6/12/18 预报滚动调整 + 全年连续重调度，返回 2.1–12.31 结果。
-    E_plan: 全局预报计划 SOC 轨迹(365*144+1)；缺省时内部计算。"""
+def run_rolling_forecast_driven(pvf, E_plan=None):
+    """【旧口径，保留作对照】问题3滚动：6/12/18 的初始 SOC 取**预报计划轨迹**
+    （等价于假设"上午实际光伏 = 预报"，即论文 §7.2 不足 4）。"""
     if E_plan is None:
         E_plan = _global_lp(PRICE_MAT, LOAD, pvf[0])['E']
     ndays = 365
@@ -183,7 +183,58 @@ def run_rolling(pvf, E_plan=None):
     up = np.maximum(0.0, G_adj - G_plan)
     dn = np.maximum(0.0, G_plan - G_adj)
     res = {'G_plan': G_plan, 'G_adj': G_adj, 'up': up, 'dn': dn,
-           'C': rc['C'], 'D': rc['D'], 'E': rc['E'], 'e': rc['e']}
+           'C': rc['C'], 'D': rc['D'], 'E': rc['E'], 'e': rc['e'],
+           'extra_charged': 0.0}
+    return _slice_to_reported(res)
+
+
+def run_rolling(pvf, E_plan=None):
+    """问题3滚动（**状态反馈/闭环版**）：0/6/12/18 预报滚动调整 + 全年连续重调度。
+
+    与旧口径的唯一区别：6/12/18 时点重新优化时，初始储电量不再取"预报计划轨迹"，
+    而由上一个决策时点到该时点的**实际光伏**递推得到（common.advance_actual_soc）：
+    储能严格执行已下发的计划充放电，实际光伏超发的盈余回充储能、不足的缺口留待
+    紧急购电兜底 —— 于是中午/傍晚的真实电量由上午/下午的实际光照决定。
+
+    E_plan: 全局预报计划 SOC 轨迹(365*144+1)，作终端电量锚点；缺省时内部计算。
+    """
+    if E_plan is None:
+        E_plan = _global_lp(PRICE_MAT, LOAD, pvf[0])['E']
+    ndays = 365
+    G_plan = np.zeros((ndays, N_SLOT))
+    G_adj = np.zeros((ndays, N_SLOT))
+    extra_charged = 0.0
+    for d in range(ndays):
+        p = PRICE_MAT[d]
+        ld = LOAD[d]
+        pv_act = PV[d]
+        E0b = E_plan[d * N_SLOT]          # 当天 0:00 边界电量
+        E1b = E_plan[(d + 1) * N_SLOT]    # 当天 24:00 边界电量
+        r0 = stage_lp(p, ld, pvf[0][d], 0, E0b, E1b, None)
+        G_plan[d] = r0['G']
+        # 6:00 —— 用 0:00–6:00 的实际光伏把 SOC 推进到 6:00
+        E6, x6 = advance_actual_soc(pv_act[:36], ld[:36], G_plan[d][:36],
+                                    r0['C'][:36], r0['D'][:36], E0b)
+        r1 = stage_lp(p, ld, pvf[6][d], 36, E6, E1b, G_plan[d][36:])
+        G6 = r1['G']
+        # 12:00 —— 用 6:00–12:00 的实际光伏推进
+        E12, x12 = advance_actual_soc(pv_act[36:72], ld[36:72], G6[:36],
+                                      r1['C'][:36], r1['D'][:36], E6)
+        r2 = stage_lp(p, ld, pvf[12][d], 72, E12, E1b, G_plan[d][72:])
+        G12 = r2['G']
+        # 18:00 —— 用 12:00–18:00 的实际光伏推进
+        E18, x18 = advance_actual_soc(pv_act[72:108], ld[72:108], G12[:36],
+                                      r2['C'][:36], r2['D'][:36], E12)
+        r3 = stage_lp(p, ld, pvf[18][d], 108, E18, E1b, G_plan[d][108:])
+        G18 = r3['G']
+        G_adj[d] = np.concatenate([G_plan[d][0:36], G6[0:36], G12[0:36], G18[0:36]])
+        extra_charged += x6 + x12 + x18
+    rc = _global_recourse(G_adj, PRICE_MAT, LOAD, PV)
+    up = np.maximum(0.0, G_adj - G_plan)
+    dn = np.maximum(0.0, G_plan - G_adj)
+    res = {'G_plan': G_plan, 'G_adj': G_adj, 'up': up, 'dn': dn,
+           'C': rc['C'], 'D': rc['D'], 'E': rc['E'], 'e': rc['e'],
+           'extra_charged': extra_charged}
     return _slice_to_reported(res)
 
 
@@ -208,18 +259,21 @@ def _merge_ranges(e):
 
 
 def _write_result4_2(res, out_path):
-    """按 result2 模板写波动电价问题2结果。res: G,C,D,E,e (ndays,144)。"""
+    """按 result2 模板写波动电价问题2结果。res: G,C,D,E,e (ndays,144)。
+    时段列与数值严格对应（第 i 列 = 时段 [i*10,(i+1)*10]），表头标签重写为真实区间序列。"""
     import openpyxl
+    from common import write_slot_header
     wb = openpyxl.load_workbook("附件/附件5/result2.xlsx")
     ndays = res['G'].shape[0]
     G, C, D, E, e = res['G'], res['C'], res['D'], res['E'], res['e']
     ws = wb["计划购电量"]
+    write_slot_header(ws)
     for k in range(ndays):
         row = 2 + k
         g = G[k]
         p = PRICE_MAT[31 + k]
         for i in range(N_SLOT):
-            ws.cell(row=row, column=2 + i, value=round(float(g[(i + 1) % N_SLOT]), 4))
+            ws.cell(row=row, column=2 + i, value=round(float(g[i]), 4))
         ws.cell(row=row, column=2 + N_SLOT, value=round(float(g.sum()), 4))
         ws.cell(row=row, column=3 + N_SLOT, value=round(float(np.dot(g, p)), 4))
     ws = wb["充放电量"]
@@ -262,8 +316,10 @@ def _write_result4_2(res, out_path):
 
 
 def _write_result4_3(res, out_path):
-    """按 result3 模板写波动电价问题3结果。res: G_plan,G_adj,up,dn,C,D,E,e。"""
+    """按 result3 模板写波动电价问题3结果。res: G_plan,G_adj,up,dn,C,D,E,e。
+    时段列与数值严格对应（第 i 列 = 时段 [i*10,(i+1)*10]），表头标签重写为真实区间序列。"""
     import openpyxl
+    from common import write_slot_header
     wb = openpyxl.load_workbook("附件/附件5/result3.xlsx")
     ndays = res['G_plan'].shape[0]
     G_plan, G_adj, C, D, E, e = res['G_plan'], res['G_adj'], res['C'], res['D'], res['E'], res['e']
@@ -271,11 +327,12 @@ def _write_result4_3(res, out_path):
 
     def fill(sheet, G, fee):
         ws = wb[sheet]
+        write_slot_header(ws)
         for k in range(ndays):
             row = 2 + k
             g = G[k]
             for i in range(N_SLOT):
-                ws.cell(row=row, column=2 + i, value=round(float(g[(i + 1) % N_SLOT]), 4))
+                ws.cell(row=row, column=2 + i, value=round(float(g[i]), 4))
             ws.cell(row=row, column=2 + N_SLOT, value=round(float(g.sum()), 4))
             ws.cell(row=row, column=3 + N_SLOT, value=round(float(fee[k]), 4))
 
@@ -376,7 +433,7 @@ def main():
     out.append("")
     # 对比：附件1每日同价(连续储能，见 solve_q23_continuous.py) vs 附件4波动价
     out.append("对比(问题2鲁棒): 附件1同价总费 14725260.23 元 vs 附件4波动价总费 %.2f 元" % t2)
-    out.append("对比(问题3滚动): 附件1同价总费 14561727.61 元 vs 附件4波动价总费 %.2f 元" % t3)
+    out.append("对比(问题3滚动): 附件1同价总费 14476916.62 元 vs 附件4波动价总费 %.2f 元" % t3)
     out.append("")
     # 跨日储能电量利用率
     Esoc = rob['E']

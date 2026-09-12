@@ -130,16 +130,35 @@ def main():
     em_fee3 = float(np.sum(roll['e'] * p31)) * 5.0
     ok("问题3 计划购电费 = 12549415.99 元", abs(plan_fee3 - 12549415.99) < FEE_TOL,
        "=%.2f" % plan_fee3)
-    ok("问题3 调整相关费 = 444364.53 元", abs(adj_fee3 - 444364.53) < FEE_TOL,
+    ok("问题3 调整相关费 = 356531.06 元（状态反馈口径）", abs(adj_fee3 - 356531.06) < FEE_TOL,
        "=%.2f" % adj_fee3)
-    ok("问题3 紧急购电费 = 1567947.09 元", abs(em_fee3 - 1567947.09) < FEE_TOL,
+    ok("问题3 紧急购电费 = 1570969.57 元（状态反馈口径）", abs(em_fee3 - 1570969.57) < FEE_TOL,
        "=%.2f" % em_fee3)
-    ok("问题3 总购电费 = 14561727.61 元",
-       abs(plan_fee3 + adj_fee3 + em_fee3 - 14561727.61) < FEE_TOL,
+    ok("问题3 总购电费 = 14476916.62 元（状态反馈口径）",
+       abs(plan_fee3 + adj_fee3 + em_fee3 - 14476916.62) < FEE_TOL,
        "=%.2f" % (plan_fee3 + adj_fee3 + em_fee3))
     dn_sum = float(roll['dn'].sum())
     ok("问题3 下调恒为 0（计划费沉没，只上调不下调）", dn_sum < TOL, "Σdn=%.3e" % dn_sum)
     ok("问题3 上调与下调不同时发生", np.min(roll['up'] * roll['dn']) >= -TOL, "")
+    lines.append("")
+
+    # ========== 状态反馈递推（common.advance_actual_soc）单元校验 ==========
+    from common import advance_actual_soc
+    lines.append("---- 状态反馈递推函数 ----")
+    _ld = np.full(36, 3000.0)
+    _G = np.full(36, 500.0)
+    _zero = np.zeros(36)
+    Ea, xa = advance_actual_soc(_zero, _ld, _G, _zero, _zero, 6000.0)
+    ok("状态反馈：光伏为零（持续缺口）时 SOC 与计划一致", abs(Ea - 6000.0) < TOL and xa < TOL,
+       "E=%.3f extra=%.3e" % (Ea, xa))
+    _pv_surplus = np.full(36, 6000.0)          # 光伏 6000kW ≈ 每段 1000kWh 盈余
+    Eb, xb = advance_actual_soc(_pv_surplus, _ld, _G, _zero, _zero, 6000.0)
+    ok("状态反馈：光伏盈余时回充储能（SOC 上升且 ≤ 上限）",
+       Eb > 6000.0 + TOL and xb > 0.0 and Eb <= E_MAX + TOL,
+       "E=%.3f extra=%.3f" % (Eb, xb))
+    Ec, xc = advance_actual_soc(_pv_surplus, _ld, _G, _zero, _zero, E_MAX - 1.0)
+    ok("状态反馈：接近满充时回充受容量上限约束", Ec <= E_MAX + TOL,
+       "E=%.3f extra=%.3f" % (Ec, xc))
     lines.append("")
 
     # ================= 问题4（附件4 波动电价，连续储能） =================
@@ -156,8 +175,8 @@ def main():
     plan_fee43 = float(np.sum(roll4['G_plan'] * p4))
     adj_fee43 = float(np.sum((1.5 * roll4['up'] + 0.5 * roll4['dn']) * p4))
     em_fee43 = float(np.sum(roll4['e'] * p4)) * 5.0
-    ok("问题4·问题3 总购电费 = 15150992.45 元",
-       abs(plan_fee43 + adj_fee43 + em_fee43 - 15150992.45) < FEE_TOL,
+    ok("问题4·问题3 总购电费 = 15073388.70 元（状态反馈口径）",
+       abs(plan_fee43 + adj_fee43 + em_fee43 - 15073388.70) < FEE_TOL,
        "=%.2f" % (plan_fee43 + adj_fee43 + em_fee43))
     check_continuous(roll4['G_adj'], roll4['C'], roll4['D'], roll4['E'], roll4['e'],
                      LOAD[31:], PV[31:], "问题4·滚动(334天)")

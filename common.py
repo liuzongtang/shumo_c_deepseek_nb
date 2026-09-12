@@ -170,3 +170,46 @@ def solve_day(price, load, pv, E0=E_INIT, E1=E_INIT, E_min=E_MIN, E_max=E_MAX):
         'E': res.x[offE:offE + nE],
         'cost': float(np.dot(res.x[offG:offG + nG], price)),
     }
+
+
+def advance_actual_soc(pv_act, load, G_seg, C_seg, D_seg, E0):
+    """按**实际**光伏把储电量推进 len(G_seg) 个 10 分钟段（状态反馈/闭环滚动用）。
+
+    规则：储能严格执行已下发的计划充放电 C/D；
+      - 实际光伏超发（bal > 0）：盈余尽量回充储能（受功率与容量约束），其余弃光；
+      - 实际光伏不足（bal < 0）：缺口由紧急购电兜底，不影响 SOC 轨迹。
+
+    pv_act/load 单位 kW，G/C/D 单位 kWh。返回 (E_end, extra_charged_kWh)。
+    """
+    E = float(E0)
+    extra = 0.0
+    for t in range(len(G_seg)):
+        bal = G_seg[t] + pv_act[t] * DT - load[t] * DT - C_seg[t] + D_seg[t]
+        c_extra = 0.0
+        if bal > 0.0:
+            room_pow = PMAX_E - C_seg[t]                 # 功率上限剩余
+            room_cap = (E_MAX - E) / ETA - C_seg[t]      # 容量上限剩余
+            c_extra = max(0.0, min(bal, room_pow, room_cap))
+        E = E + ETA * (C_seg[t] + c_extra) - D_seg[t] / ETA
+        extra += c_extra
+        E = min(max(E, E_MIN), E_MAX)
+    return E, extra
+
+
+def slot_label(i):
+    """第 i 个 10 分钟段（i=0..143）的时段标签：[i*10, (i+1)*10]；24:00 记为 0:00+1。"""
+    def clk(m):
+        return "0:00+1" if m == 1440 else "%d:%02d" % (m // 60, m % 60)
+    return "%s-%s" % (clk(i * 10), clk(i * 10 + 10))
+
+
+def write_slot_header(ws, first_slot_col=2):
+    """把工作表第 1 行的 144 个时段标签重写为**真实区间**序列
+    （0:00-0:10 … 23:50-0:00+1）。
+
+    背景：附件5 模板自带的 144 个标签覆盖的是 [0:10, 24:10]（缺 0:00-0:10、多出
+    物理上不存在的 24:00-24:10），与"间隔 10 分钟保存当天 144 个购电量"的语义不符。
+    重写后：第 i 列（列号 first_slot_col+i）即时段 [i*10, (i+1)*10]，数值按行序填入。
+    """
+    for i in range(N_SLOT):
+        ws.cell(row=1, column=first_slot_col + i, value=slot_label(i))
